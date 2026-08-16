@@ -1,0 +1,340 @@
+[33mcommit 27b2545fbaaaefb7ee68d58b459c3252b83a38bc[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Shaik Mahaboob Subhani <skmahaboobsubhani345@gmail.com>
+Date:   Sun Aug 16 12:17:50 2026 +0530
+
+    Initial commit: MNIST digit recognition project
+
+[1mdiff --git a/README (2).md b/README (2).md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..ab598a1[m
+[1m--- /dev/null[m
+[1m+++ b/README (2).md[m	
+[36m@@ -0,0 +1,72 @@[m
+[32m+[m[32m# Digit Recognition using MNIST Dataset[m
+[32m+[m
+[32m+[m[32mA Convolutional Neural Network (CNN) that classifies handwritten digits (0-9)[m
+[32m+[m[32mfrom the MNIST dataset, plus a real-world inference script that can read[m
+[32m+[m[32mdigits from your own photos.[m
+[32m+[m
+[32m+[m[32m## Overview[m
+[32m+[m
+[32m+[m[32m- **Dataset**: MNIST (70,000 handwritten digit images, 28x28 grayscale)[m
+[32m+[m[32m- **Model**: CNN (Conv2D + BatchNorm + MaxPooling + Dropout, twice, then Dense layers)[m
+[32m+[m[32m- **Test Accuracy**: 99.37%[m
+[32m+[m
+[32m+[m[32m## Project Structure[m
+[32m+[m
+[32m+[m[32m```[m
+[32m+[m[32m├── mnist_digit_recognition.py   # Trains the CNN, evaluates it, saves plots + model[m
+[32m+[m[32m├── predict_digit.py             # Predicts the digit in any photo you provide[m
+[32m+[m[32m├── requirements.txt             # Python dependencies[m
+[32m+[m[32m└── outputs/                     # Generated after training (model, charts, report)[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m## Setup[m
+[32m+[m
+[32m+[m[32m```bash[m
+[32m+[m[32mpip install -r requirements.txt[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m## Usage[m
+[32m+[m
+[32m+[m[32m**1. Train the model:**[m
+[32m+[m[32m```bash[m
+[32m+[m[32mpython mnist_digit_recognition.py[m
+[32m+[m[32m```[m
+[32m+[m[32mDownloads the MNIST dataset, trains the CNN (~10-20 min on CPU), and saves[m
+[32m+[m[32meverything to `outputs/`: the trained model, training curves, confusion[m
+[32m+[m[32mmatrix, sample predictions, and a classification report.[m
+[32m+[m
+[32m+[m[32m**2. Predict a digit from your own photo:**[m
+[32m+[m[32m```bash[m
+[32m+[m[32mpython predict_digit.py your_digit_photo.png[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m## A Real-World Problem I Solved[m
+[32m+[m
+[32m+[m[32mFeeding an ordinary phone photo straight into the model gave poor,[m
+[32m+[m[32mlow-confidence predictions — even though the model itself was 99.37%[m
+[32m+[m[32maccurate on the MNIST test set. The reason: MNIST digits are tiny,[m
+[32m+[m[32mtightly-cropped, bold white strokes on a pure black background, while a[m
+[32m+[m[32mreal photo has shadows, uneven lighting, background clutter, and thin,[m
+[32m+[m[32mdim pen strokes.[m
+[32m+[m
+[32m+[m[32m`predict_digit.py` fixes this with a preprocessing pipeline that:[m
+[32m+[m[32m1. Removes shadows/uneven lighting via local background subtraction[m
+[32m+[m[32m   (instead of a single global brightness threshold)[m
+[32m+[m[32m2. Isolates the digit as the largest connected dark region[m
+[32m+[m[32m3. Thickens the strokes to match MNIST's bold pen weight[m
+[32m+[m[32m4. Stretches contrast so strokes are pure white, matching the training data[m
+[32m+[m[32m5. Centers the digit on a 28x28 canvas the same way MNIST itself does[m
+[32m+[m
+[32m+[m[32mThis took a photo that was misclassified with 45% confidence up to a[m
+[32m+[m[32mcorrect prediction at 97%+ confidence.[m
+[32m+[m
+[32m+[m[32m## Model Architecture[m
+[32m+[m
+[32m+[m[32m```[m
+[32m+[m[32mConv2D(32) -> BatchNorm -> Conv2D(32) -> MaxPool -> Dropout[m
+[32m+[m[32mConv2D(64) -> BatchNorm -> Conv2D(64) -> MaxPool -> Dropout[m
+[32m+[m[32mFlatten -> Dense(256) -> BatchNorm -> Dropout -> Dense(10, softmax)[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mTrained with Adam optimizer, early stopping, and learning-rate reduction[m
+[32m+[m[32mon plateau.[m
+[1mdiff --git a/mnist_digit_recognition.py b/mnist_digit_recognition.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..b8a1f4b[m
+[1m--- /dev/null[m
+[1m+++ b/mnist_digit_recognition.py[m
+[36m@@ -0,0 +1,288 @@[m
+[32m+[m[32m"""[m
+[32m+[m[32mDigit Recognition using the MNIST Dataset[m
+[32m+[m[32m==========================================[m
+[32m+[m
+[32m+[m[32mGoal[m
+[32m+[m[32m----[m
+[32m+[m[32mClassify 28x28 grayscale images of handwritten digits (0-9) into the[m
+[32m+[m[32mcorrect digit class using a Convolutional Neural Network (CNN).[m
+[32m+[m
+[32m+[m[32mPipeline[m
+[32m+[m[32m--------[m
+[32m+[m[32m1. Load & explore the MNIST dataset[m
+[32m+[m[32m2. Preprocess (normalize, reshape, one-hot encode)[m
+[32m+[m[32m3. Build a CNN model[m
+[32m+[m[32m4. Train with validation split[m
+[32m+[m[32m5. Evaluate on the test set (accuracy, confusion matrix, classification report)[m
+[32m+[m[32m6. Visualize training curves and sample predictions[m
+[32m+[m[32m7. Save the trained model for reuse/deployment[m
+[32m+[m
+[32m+[m[32mRun:[m
+[32m+[m[32m    python mnist_digit_recognition.py[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m[32mimport gzip[m
+[32m+[m[32mimport os[m
+[32m+[m[32mimport urllib.request[m
+[32m+[m
+[32m+[m[32mimport numpy as np[m
+[32m+[m[32mimport matplotlib[m
+[32m+[m[32mmatplotlib.use("Agg")  # headless-safe backend[m
+[32m+[m[32mimport matplotlib.pyplot as plt[m
+[32m+[m[32mimport seaborn as sns[m
+[32m+[m
+[32m+[m[32mimport tensorflow as tf[m
+[32m+[m[32mfrom tensorflow import keras[m
+[32m+[m[32mfrom tensorflow.keras import layers[m
+[32m+[m
+[32m+[m[32mfrom sklearn.metrics import confusion_matrix, classification_report[m
+[32m+[m
+[32m+[m[32mOUTPUT_DIR = "outputs"[m
+[32m+[m[32mos.makedirs(OUTPUT_DIR, exist_ok=True)[m
+[32m+[m
+[32m+[m[32mRANDOM_SEED = 42[m
+[32m+[m[32mtf.random.set_seed(RANDOM_SEED)[m
+[32m+[m[32mnp.random.seed(RANDOM_SEED)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32m# 1. LOAD DATA[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32mMNIST_MIRROR = "https://raw.githubusercontent.com/fgnt/mnist/master/"[m
+[32m+[m[32mMNIST_FILES = {[m
+[32m+[m[32m    "train_images": "train-images-idx3-ubyte.gz",[m
+[32m+[m[32m    "train_labels": "train-labels-idx1-ubyte.gz",[m
+[32m+[m[32m    "test_images": "t10k-images-idx3-ubyte.gz",[m
+[32m+[m[32m    "test_labels": "t10k-labels-idx1-ubyte.gz",[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _read_idx_images(path):[m
+[32m+[m[32m    with gzip.open(path, "rb") as f:[m
+[32m+[m[32m        f.read(16)  # header: magic, n_images, rows, cols[m
+[32m+[m[32m        buf = f.read()[m
+[32m+[m[32m    return np.frombuffer(buf, dtype=np.uint8).reshape(-1, 28, 28)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _read_idx_labels(path):[m
+[32m+[m[32m    with gzip.open(path, "rb") as f:[m
+[32m+[m[32m        f.read(8)  # header: magic, n_labels[m
+[32m+[m[32m        buf = f.read()[m
+[32m+[m[32m    return np.frombuffer(buf, dtype=np.uint8)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef load_data(cache_dir="data_raw"):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Load MNIST. Tries the standard Keras loader first; falls back to a[m
+[32m+[m[32m    GitHub-hosted mirror of the original ubyte files if that download[m
+[32m+[m[32m    is blocked (e.g. restricted network egress to storage.googleapis.com).[m
+[32m+[m[32m    """[m
+[32m+[m[32m    print("Loading MNIST dataset...")[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()[m
+[32m+[m[32m    except Exception as e:[m
+[32m+[m[32m        print(f"Default Keras download failed ({e}). Falling back to GitHub mirror...")[m
+[32m+[m[32m        os.makedirs(cache_dir, exist_ok=True)[m
+[32m+[m[32m        paths = {}[m
+[32m+[m[32m        for key, fname in MNIST_FILES.items():[m
+[32m+[m[32m            local_path = os.path.join(cache_dir, fname)[m
+[32m+[m[32m            if not os.path.exists(local_path):[m
+[32m+[m[32m                urllib.request.urlretrieve(MNIST_MIRROR + fname, local_path)[m
+[32m+[m[32m            paths[key] = local_path[m
+[32m+[m
+[32m+[m[32m        x_train = _read_idx_images(paths["train_images"])[m
+[32m+[m[32m        y_train = _read_idx_labels(paths["train_labels"])[m
+[32m+[m[32m        x_test = _read_idx_images(paths["test_images"])[m
+[32m+[m[32m        y_test = _read_idx_labels(paths["test_labels"])[m
+[32m+[m
+[32m+[m[32m    print(f"Train images: {x_train.shape}, Train labels: {y_train.shape}")[m
+[32m+[m[32m    print(f"Test images:  {x_test.shape}, Test labels:  {y_test.shape}")[m
+[32m+[m[32m    return (x_train, y_train), (x_test, y_test)[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32m# 2. PREPROCESS[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32mdef preprocess(x_train, y_train, x_test, y_test, num_classes=10):[m
+[32m+[m[32m    # Normalize pixel values to [0, 1][m
+[32m+[m[32m    x_train = x_train.astype("float32") / 255.0[m
+[32m+[m[32m    x_test = x_test.astype("float32") / 255.0[m
+[32m+[m
+[32m+[m[32m    # Add channel dimension: (N, 28, 28) -> (N, 28, 28, 1)[m
+[32m+[m[32m    x_train = np.expand_dims(x_train, -1)[m
+[32m+[m[32m    x_test = np.expand_dims(x_test, -1)[m
+[32m+[m
+[32m+[m[32m    # One-hot encode labels[m
+[32m+[m[32m    y_train_cat = keras.utils.to_categorical(y_train, num_classes)[m
+[32m+[m[32m    y_test_cat = keras.utils.to_categorical(y_test, num_classes)[m
+[32m+[m
+[32m+[m[32m    return x_train, y_train_cat, x_test, y_test_cat[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32m# 3. BUILD MODEL[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32mdef build_model(input_shape=(28, 28, 1), num_classes=10):[m
+[32m+[m[32m    model = keras.Sequential([m
+[32m+[m[32m        [[m
+[32m+[m[32m            layers.Input(shape=input_shape),[m
+[32m+[m
+[32m+[m[32m            layers.Conv2D(32, kernel_size=3, activation="relu", padding="same"),[m
+[32m+[m[32m            layers.BatchNormalization(),[m
+[32m+[m[32m            layers.Conv2D(32, kernel_size=3, activation="relu", padding="same"),[m
+[32m+[m[32m            layers.MaxPooling2D(pool_size=2),[m
+[32m+[m[32m            layers.Dropout(0.25),[m
+[32m+[m
+[32m+[m[32m            layers.Conv2D(64, kernel_size=3, activation="relu", padding="same"),[m
+[32m+[m[32m            layers.BatchNormalization(),[m
+[32m+[m[32m            layers.Conv2D(64, kernel_size=3, activation="relu", padding="same"),[m
+[32m+[m[32m            layers.MaxPooling2D(pool_size=2),[m
+[32m+[m[32m            layers.Dropout(0.25),[m
+[32m+[m
+[32m+[m[32m            layers.Flatten(),[m
+[32m+[m[32m            layers.Dense(256, activation="relu"),[m
+[32m+[m[32m            layers.BatchNormalization(),[m
+[32m+[m[32m            layers.Dropout(0.5),[m
+[32m+[m[32m            layers.Dense(num_classes, activation="softmax"),[m
+[32m+[m[32m        ][m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    model.compile([m
+[32m+[m[32m        optimizer="adam",[m
+[32m+[m[32m        loss="categorical_crossentropy",[m
+[32m+[m[32m        metrics=["accuracy"],[m
+[32m+[m[32m    )[m
+[32m+[m[32m    return model[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32m# 4. VISUALIZATION HELPERS[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32mdef plot_sample_digits(x, y, path):[m
+[32m+[m[32m    fig, axes = plt.subplots(2, 5, figsize=(10, 4))[m
+[32m+[m[32m    for i, ax in enumerate(axes.flat):[m
+[32m+[m[32m        ax.imshow(x[i].squeeze(), cmap="gray")[m
+[32m+[m[32m        label = np.argmax(y[i]) if y[i].ndim else y[i][m
+[32m+[m[32m        ax.set_title(f"Label: {label}")[m
+[32m+[m[32m        ax.axis("off")[m
+[32m+[m[32m    plt.tight_layout()[m
+[32m+[m[32m    plt.savefig(path, dpi=150)[m
+[32m+[m[32m    plt.close()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef plot_training_history(history, path):[m
+[32m+[m[32m    fig, axes = plt.subplots(1, 2, figsize=(12, 4))[m
+[32m+[m
+[32m+[m[32m    axes[0].plot(history.history["accuracy"], label="Train Accuracy")[m
+[32m+[m[32m    axes[0].plot(history.history["val_accuracy"], label="Val Accuracy")[m
+[32m+[m[32m    axes[0].set_title("Accuracy over Epochs")[m
+[32m+[m[32m    axes[0].set_xlabel("Epoch")[m
+[32m+[m[32m    axes[0].set_ylabel("Accuracy")[m
+[32m+[m[32m    axes[0].legend()[m
+[32m+[m
+[32m+[m[32m    axes[1].plot(history.history["loss"], label="Train Loss")[m
+[32m+[m[32m    axes[1].plot(history.history["val_loss"], label="Val Loss")[m
+[32m+[m[32m    axes[1].set_title("Loss over Epochs")[m
+[32m+[m[32m    axes[1].set_xlabel("Epoch")[m
+[32m+[m[32m    axes[1].set_ylabel("Loss")[m
+[32m+[m[32m    axes[1].legend()[m
+[32m+[m
+[32m+[m[32m    plt.tight_layout()[m
+[32m+[m[32m    plt.savefig(path, dpi=150)[m
+[32m+[m[32m    plt.close()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef plot_confusion_matrix(y_true, y_pred, path):[m
+[32m+[m[32m    cm = confusion_matrix(y_true, y_pred)[m
+[32m+[m[32m    plt.figure(figsize=(8, 6))[m
+[32m+[m[32m    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",[m
+[32m+[m[32m                xticklabels=range(10), yticklabels=range(10))[m
+[32m+[m[32m    plt.xlabel("Predicted Label")[m
+[32m+[m[32m    plt.ylabel("True Label")[m
+[32m+[m[32m    plt.title("Confusion Matrix")[m
+[32m+[m[32m    plt.tight_layout()[m
+[32m+[m[32m    plt.savefig(path, dpi=150)[m
+[32m+[m[32m    plt.close()[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef plot_predictions(x_test, y_true, y_pred, path, n=10):[m
+[32m+[m[32m    fig, axes = plt.subplots(2, 5, figsize=(12, 5))[m
+[32m+[m[32m    idxs = np.random.choice(len(x_test), n, replace=False)[m
+[32m+[m[32m    for ax, idx in zip(axes.flat, idxs):[m
+[32m+[m[32m        ax.imshow(x_test[idx].squeeze(), cmap="gray")[m
+[32m+[m[32m        correct = y_true[idx] == y_pred[idx][m
+[32m+[m[32m        color = "green" if correct else "red"[m
+[32m+[m[32m        ax.set_title(f"True: {y_true[idx]} / Pred: {y_pred[idx]}", color=color)[m
+[32m+[m[32m        ax.axis("off")[m
+[32m+[m[32m    plt.tight_layout()[m
+[32m+[m[32m    plt.savefig(path, dpi=150)[m
+[32m+[m[32m    plt.close()[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32m# 5. MAIN PIPELINE[m
+[32m+[m[32m# ---------------------------------------------------------------------------[m
+[32m+[m[32mdef main():[m
+[32m+[m[32m    (x_train, y_train), (x_test, y_test) = load_data()[m
+[32m+[m
+[32m+[m[32m    # Save a peek at raw sample digits[m
+[32m+[m[32m    plot_sample_digits([m
+[32m+[m[32m        np.expand_dims(x_train, -1), y_train,[m
+[32m+[m[32m        os.path.join(OUTPUT_DIR, "sample_digits.png"),[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    x_train_p, y_train_cat, x_test_p, y_test_cat = preprocess([m
+[32m+[m[32m        x_train, y_train, x_test, y_test[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    model = build_model()[m
+[32m+[m[32m    model.summary()[m
+[32m+[m
+[32m+[m[32m    callbacks = [[m
+[32m+[m[32m        keras.callbacks.EarlyStopping([m
+[32m+[m[32m            monitor="val_loss", patience=3, restore_best_weights=True[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        keras.callbacks.ReduceLROnPlateau([m
+[32m+[m[32m            monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6[m
+[32m+[m[32m        ),[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    print
